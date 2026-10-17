@@ -1,45 +1,23 @@
-"""
-High School Management System API
+"""API for exploring and sonifying the strongest recorded earthquakes."""
 
-A super simple FastAPI application that allows students to view and sign up
-for extracurricular activities at Mergington High School.
-"""
-
-from fastapi import FastAPI, HTTPException
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import RedirectResponse
-import os
 from pathlib import Path
 
-app = FastAPI(title="Mergington High School API",
-              description="API for viewing and signing up for extracurricular activities")
+import httpx
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
-# Mount the static files directory
-current_dir = Path(__file__).parent
-app.mount("/static", StaticFiles(directory=os.path.join(Path(__file__).parent,
-          "static")), name="static")
+USGS_API_URL = "https://earthquake.usgs.gov/fdsnws/event/1/query"
+USGS_START_DATE = "1900-01-01"
+USGS_MIN_MAGNITUDE = 8.5
 
-# In-memory activity database
-activities = {
-    "Chess Club": {
-        "description": "Learn strategies and compete in chess tournaments",
-        "schedule": "Fridays, 3:30 PM - 5:00 PM",
-        "max_participants": 12,
-        "participants": ["michael@mergington.edu", "daniel@mergington.edu"]
-    },
-    "Programming Class": {
-        "description": "Learn programming fundamentals and build software projects",
-        "schedule": "Tuesdays and Thursdays, 3:30 PM - 4:30 PM",
-        "max_participants": 20,
-        "participants": ["emma@mergington.edu", "sophia@mergington.edu"]
-    },
-    "Gym Class": {
-        "description": "Physical education and sports activities",
-        "schedule": "Mondays, Wednesdays, Fridays, 2:00 PM - 3:00 PM",
-        "max_participants": 30,
-        "participants": ["john@mergington.edu", "olivia@mergington.edu"]
-    }
-}
+app = FastAPI(
+    title="Earthquake Sonification Lab",
+    description="Explore and sonify USGS earthquake data with Tone.js.",
+)
+
+static_dir = Path(__file__).parent / "static"
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 
 @app.get("/")
@@ -47,21 +25,45 @@ def root():
     return RedirectResponse(url="/static/index.html")
 
 
-@app.get("/activities")
-def get_activities():
-    return activities
+@app.get("/earthquakes")
+async def strongest_earthquakes(
+    limit: int = Query(default=20, ge=5, le=50),
+):
+    """Return the strongest USGS earthquakes since the instrumental era began."""
+    params = {
+        "format": "geojson",
+        "starttime": USGS_START_DATE,
+        "minmagnitude": USGS_MIN_MAGNITUDE,
+        "orderby": "magnitude",
+        "limit": limit,
+    }
 
+    try:
+        async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
+            response = await client.get(USGS_API_URL, params=params)
+            response.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="No fue posible consultar el catálogo oficial de USGS.",
+        ) from exc
 
-@app.post("/activities/{activity_name}/signup")
-def signup_for_activity(activity_name: str, email: str):
-    """Sign up a student for an activity"""
-    # Validate activity exists
-    if activity_name not in activities:
-        raise HTTPException(status_code=404, detail="Activity not found")
+    payload = response.json()
+    features = payload.get("features", [])
+    features.sort(
+        key=lambda feature: feature.get("properties", {}).get("mag") or 0,
+        reverse=True,
+    )
 
-    # Get the specific activity
-    activity = activities[activity_name]
-
-    # Add student
-    activity["participants"].append(email)
-    return {"message": f"Signed up {email} for {activity_name}"}
+    return {
+        "type": "FeatureCollection",
+        "metadata": {
+            **payload.get("metadata", {}),
+            "catalog": "USGS Earthquake Catalog",
+            "start_date": USGS_START_DATE,
+            "minimum_magnitude": USGS_MIN_MAGNITUDE,
+            "ranking": "Magnitud de momento (Mw), orden descendente",
+            "query_url": str(response.request.url),
+        },
+        "features": features,
+    }

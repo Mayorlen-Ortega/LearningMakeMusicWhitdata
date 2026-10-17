@@ -1,50 +1,44 @@
-# Mergington High School Activities API
+# Atlas sísmico sonoro
 
-A super simple FastAPI application that allows students to view and sign up for extracurricular activities.
+Aplicación de práctica que consulta el catálogo oficial de terremotos de
+[USGS](https://earthquake.usgs.gov/fdsnws/event/1/), ubica en un mapa los
+eventos de mayor magnitud desde 1900 y convierte sus datos en sonido con
+Tone.js.
 
-## Features
+El ranking se genera con una consulta reproducible al catálogo de USGS,
+ordenada por la magnitud preferida del organismo. En los grandes terremotos
+esta suele pertenecer a la familia de magnitud de momento (por ejemplo `mw`,
+`mww` o `mwc`), más adecuada que la escala local de Richter para comparar
+eventos de este tamaño.
 
-- View all available extracurricular activities
-- Sign up for activities
+## Sonificación
 
-## Getting Started
+- Latitud: selecciona una nota de una escala pentatónica.
+- Profundidad: selecciona el registro; un foco más profundo produce notas más
+  graves.
+- Magnitud: controla el volumen y la duración.
+- Longitud: controla el paneo estéreo.
 
-1. Install the dependencies:
+Estas reglas son una interpretación artística de los datos, no una
+reconstrucción del sonido físico de un terremoto.
 
-   ```
-   pip install fastapi uvicorn
-   ```
+## Ejecución
 
-2. Run the application:
+Desde la raíz del repositorio:
 
-   ```
-   python app.py
-   ```
+```bash
+source /workspace/.venvs/LearningMakeMusicWhitdata/bin/activate
+python -m uvicorn src.app:app --reload --reload-include 'src/static/*'
+```
 
-3. Open your browser and go to:
-   - API documentation: http://localhost:8000/docs
-   - Alternative documentation: http://localhost:8000/redoc
+La interfaz queda disponible en `http://localhost:8000/` y la consulta
+normalizada en `http://localhost:8000/earthquakes`.
 
-## API Endpoints
+## Pruebas
 
-| Method | Endpoint                                                          | Description                                                         |
-| ------ | ----------------------------------------------------------------- | ------------------------------------------------------------------- |
-| GET    | `/activities`                                                     | Get all activities with their details and current participant count |
-| POST   | `/activities/{activity_name}/signup?email=student@mergington.edu` | Sign up for an activity                                             |
+Las pruebas no dependen de la red: simulan una respuesta oficial con la misma
+estructura GeoJSON.
 
-## Data Model
-
-The application uses a simple data model with meaningful identifiers:
-
-1. **Activities** - Uses activity name as identifier:
-
-   - Description
-   - Schedule
-   - Maximum number of participants allowed
-   - List of student emails who are signed up
-
-2. **Students** - Uses email as identifier:
-   - Name
-   - Grade level
-
-All data is stored in memory, which means data will be reset when the server restarts.
+```bash
+python -m unittest discover -s tests -v
+```
